@@ -59,6 +59,9 @@ DynamoDown.prototype._close = function(cb) {
 }
 
 DynamoDown.prototype._put = function(key, value, options, cb) {
+   if (typeof options == 'function')
+    cb = options;
+    
   var params = {
     TableName: this.tableName,
     Item: {
@@ -98,6 +101,9 @@ DynamoDown.prototype._get = function(key, options, cb) {
 }
 
 DynamoDown.prototype._del = function(key, options, cb) {
+  if (typeof options == 'function')
+    cb = options;
+    
   var params = {
     TableName: this.tableName,
     Key: {
@@ -114,6 +120,8 @@ DynamoDown.prototype._del = function(key, options, cb) {
 
 DynamoDown.prototype._batch = function (array, options, cb) {
   var self = this
+  if (typeof options == 'function')
+    cb = options;
 
   async.eachSeries(array, function (item, cb) {
     if (item.type === 'put') {
