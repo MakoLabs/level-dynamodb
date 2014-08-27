@@ -77,6 +77,11 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
 }
 
 DynamoDown.prototype._get = function(key, options, cb) {
+  if (typeof options == 'function'){
+    cb = options;
+    options = null;
+  }
+   
   var params = {
     TableName: this.tableName,
     Key: {
@@ -89,7 +94,7 @@ DynamoDown.prototype._get = function(key, options, cb) {
     if (err) return cb(err)
     if (data && data.Item && data.Item.value) {
       var value = data.Item.value.S
-      if (options.asBuffer === false) {
+      if (options && options.asBuffer === false) {
         return cb(null, value)
       } else {
         return cb(null, new Buffer(value))
