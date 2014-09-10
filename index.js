@@ -133,10 +133,15 @@ DynamoDown.prototype._get = function(key, options, cb) {
 	options = null;
     }
     
+    var hkey = this.hashKey;
+    if('hash' in options){
+	hkey = hkey + "~"+options.hash;
+    }
+    
     var params = {
 	TableName: this.tableName,
 	Key: {
-	    hkey: { S: this.hashKey },
+	    hkey: { S: hkey },
 	    rkey: { S: key }
 	}
     }
@@ -160,10 +165,15 @@ DynamoDown.prototype._del = function(key, options, cb) {
     if (typeof options == 'function')
 	cb = options;
     
+    var hkey = this.hashKey;
+    if('hash' in options){
+	hkey = hkey + "~"+options.hash;
+    }
+    
     var params = {
 	TableName: this.tableName,
 	Key: {
-	    hkey: { S: this.hashKey },
+	    hkey: { S: hkey },
 	    rkey: { S: key }
 	}
     }
@@ -171,7 +181,7 @@ DynamoDown.prototype._del = function(key, options, cb) {
     var self = this;
     if(bulkBufferSize > 0){
 	var process = function(){
-	    bulkBuffer.push({ type: 'del', key: key, params: params });
+	    bulkBuffer.push({ type: 'del', key: key, params: params, hash: hkey });
 	    if(bulkBuffer.length >= bulkBufferSize){
 		self.flush(cb);
 	    }else{
@@ -302,7 +312,7 @@ DynamoDown.prototype.flush = function(cb)
 		    var params = {
 			TableName: self.tableName,
 			Key: {
-			    hkey: { S: self.hashKey },
+			    hkey: { S: entry.hash },
 			    rkey: { S: entry.key }
 			}
 		    };
