@@ -82,11 +82,16 @@ DynamoDown.prototype._close = function(cb) {
 DynamoDown.prototype._put = function(key, value, options, cb) {
     if (typeof options == 'function')
 	cb = options;
-    
+    var hkey = this.hashKey;
+    if('hash' in value){
+	hkey = hkey + "~"+value.hash;
+	delete value['hash'];
+    }
+
     var params = {
 	TableName: this.tableName,
 	Item: {
-	    hkey: { S: this.hashKey },
+	    hkey: { S: hash },
 	    rkey: { S: key },
 	    value: {
 		S: JSON.stringify(value)
@@ -97,7 +102,7 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
 
     if(bulkBufferSize > 0){
 	var process = function(){
-	    bulkBuffer.push({ type: 'put', key: key, value:value, params: params });
+	    bulkBuffer.push({ type: 'put', key: key, value:value, params: params, hash: hash });
 	    if(bulkBuffer.length >= bulkBufferSize){
 		self.flush(cb);
 	    }else{
@@ -308,7 +313,7 @@ DynamoDown.prototype.flush = function(cb)
 		    var params = {
 			TableName: self.tableName,
 			Key: {
-			    hkey: { S: self.hashKey },
+			    hkey: { S: entry.hash },
 			    rkey: { S: entry.key }
 			},
 			AttributeUpdates: {
