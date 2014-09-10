@@ -219,7 +219,7 @@ DynamoDown.prototype._batch = function (array, options, cb) {
     var self = this;
     if(bulkBufferSize > 0){
 	var process = function(){
-		var hkey = this.hashKey;
+		var hkey = self.hashKey;
 	    for(var i=0;i<array.length;i++){
 	    	var entry = null;
 		if (array[i].type === 'del') {
