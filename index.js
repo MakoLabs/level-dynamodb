@@ -86,6 +86,8 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
     if('hash' in value){
 	hkey = hkey + "~"+value.hash;
 	delete value['hash'];
+    }else if('hash' in options){
+    	hkey = hkey + "~"+options.hash;
     }
 
     var params = {
@@ -217,12 +219,16 @@ DynamoDown.prototype._batch = function (array, options, cb) {
     var self = this;
     if(bulkBufferSize > 0){
 	var process = function(){
+		var hkey = this.hashKey;
 	    for(var i=0;i<array.length;i++){
+	    	var entry = null;
 		if (array[i].type === 'del') {
-		    bulkBuffer.push({ type: 'del', key: array[i].key });
+		    entry = { type: 'del', key: array[i].key, 'hash': hkey };
 		}else{
-		    bulkBuffer.push({ type: 'put', key: array[i].key, value: array[i].value });
+		    entry = { type: 'put', key: array[i].key, value: array[i].value, 'hash': hkey };
 		}
+		if('hash' in array[i]) entry['hash'] = hkey + "~"+array[i].hash;
+		bulkBuffer.push(entry);
 	    }
 	    
 	    if(bulkBuffer.length >= bulkBufferSize){
@@ -246,10 +252,14 @@ DynamoDown.prototype._batch = function (array, options, cb) {
 	}
     }else{
 	async.eachSeries(array, function (item, cb) {
+	    var opts = {};
+	    if('hash' in item) opts['hash'] = item.hash;
 	    if (item.type === 'put') {
-		self._put(item.key, item.value, options, cb)
+		//self._put(item.key, item.value, options, cb)
+		self._put(item.key, item.value, opts, cb)
 	    } else if (item.type === 'del') {
-		self._del(item.key, options, cb)
+		//self._del(item.key, options, cb)
+		self._del(item.key, opts, cb)
 	    }
 	}, cb);
     }
