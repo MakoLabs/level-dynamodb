@@ -83,10 +83,7 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
     if (typeof options == 'function')
 	cb = options;
     var hkey = this.hashKey;
-    if('hash' in value){
-	hkey = hkey + "~"+value.hash;
-	delete value['hash'];
-    }else if('hash' in options){
+    if('hash' in options){
     	hkey = hkey + "~"+options.hash;
     }
 
