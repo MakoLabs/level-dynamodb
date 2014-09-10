@@ -90,21 +90,11 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
     	hkey = hkey + "~"+options.hash;
     }
 
-    var params = {
-	TableName: this.tableName,
-	Item: {
-	    hkey: { S: hash },
-	    rkey: { S: key },
-	    value: {
-		S: JSON.stringify(value)
-	    }
-	}
-    }
     var self = this;
 
     if(bulkBufferSize > 0){
 	var process = function(){
-	    bulkBuffer.push({ type: 'put', key: key, value:value, params: params, hash: hash });
+	    bulkBuffer.push({ type: 'put', key: key, value:value, params: params, hash: hkey });
 	    if(bulkBuffer.length >= bulkBufferSize){
 		self.flush(cb);
 	    }else{
@@ -125,6 +115,16 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
 	    process();
 	}
     }else{
+    	var params = {
+	    TableName: this.tableName,
+	    Item: {
+	        hkey: { S: hkey },
+	        rkey: { S: key },
+	        value: {
+		    S: JSON.stringify(value)
+	    	}
+	    }
+    	};
 	this.ddb.putItem(params, cb)
     }
 }
@@ -229,6 +229,7 @@ DynamoDown.prototype._batch = function (array, options, cb) {
 		}
 		if('hash' in array[i]) entry['hash'] = hkey + "~"+array[i].hash;
 		bulkBuffer.push(entry);
+		console.log(util.inspect(entry))
 	    }
 	    
 	    if(bulkBuffer.length >= bulkBufferSize){
@@ -345,6 +346,7 @@ DynamoDown.prototype.flush = function(cb)
 			    }
 			}
 		    };
+		    console.log(util.inspect(params, { depth: 6 }));
 		    self.ddb.updateItem(params, function(err){
 			if(err) console.log("[update error] Error updating "+util.inspect(entry)+":"+err);			
 		    });
