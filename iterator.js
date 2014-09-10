@@ -107,14 +107,15 @@ DynamoIterator.prototype.getRange = function(opts, cb) {
   }
 
   var rkey = createRKey(opts)
-
+    var hash = this.db.hashKey;
+    if('hash' in opts) hash = opts.hash;
   var params = {
     TableName: this.db.tableName,
     KeyConditions: {
       hkey: {
         ComparisonOperator: 'EQ',
         AttributeValueList: [
-          { S: this.db.hashKey }
+            { S: hash }
         ]
       },
       rkey: rkey
