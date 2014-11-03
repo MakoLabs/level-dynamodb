@@ -338,7 +338,7 @@ DynamoDown.prototype.flush = function(cb)
 			    value: {
 				Action: 'PUT',
 				Value: {
-				    S: JSON.stringify(entry.value)
+				    S: entry.value
 				}
 			    }
 			}
