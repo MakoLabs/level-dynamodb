@@ -44,7 +44,7 @@ DynamoIterator.prototype._next = function(cb) {
     }
 
     if (!this._valueAsBuffer) {
-      obj.value = obj.value.toString()
+      obj.value = JSON.parse(obj.value.toString());
     }
 
     cb(null, obj.key, obj.value)
