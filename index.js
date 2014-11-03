@@ -118,7 +118,7 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
 	        hkey: { S: hkey },
 	        rkey: { S: key },
 	        value: {
-		    S: JSON.stringify(value)
+		    S: value
 	    	}
 	    }
     	};
@@ -150,7 +150,7 @@ DynamoDown.prototype._get = function(key, options, cb) {
 	if (data && data.Item && data.Item.value) {
 	    var value = data.Item.value.S
 	    if (options && options.asBuffer === false) {
-		return cb(null, JSON.parse(value))
+		return cb(null, value)
 	    } else {
 		return cb(null, new Buffer(value))
 	    }
