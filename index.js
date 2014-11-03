@@ -150,7 +150,7 @@ DynamoDown.prototype._get = function(key, options, cb) {
 	if (data && data.Item && data.Item.value) {
 	    var value = data.Item.value.S
 	    if (options && options.asBuffer === false) {
-		return cb(null, value)
+		return cb(null, value.toString())
 	    } else {
 		return cb(null, new Buffer(value))
 	    }
