@@ -97,7 +97,7 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
     if (typeof options == 'function')
 	cb = options;
     var hkey = this.hashKey;
-    if('hash' in options){
+    if(options && typeof options == 'object' && 'hash' in options){
     	hkey = hkey + "~"+options.hash;
     }
 
@@ -160,7 +160,7 @@ DynamoDown.prototype._del = function(key, options, cb) {
 	cb = options;
     
     var hkey = this.hashKey;
-    if('hash' in options){
+    if(options && typeof options == 'object' && 'hash' in options){
 	hkey = hkey + "~"+options.hash;
     }
     
@@ -217,8 +217,9 @@ DynamoDown.prototype._batch = function (array, options, cb) {
 	    }else{
 		entry = { type: 'put', key: array[i].key, value: array[i].value };
 	    }
-            if('hash' in array[i]) entry['hash'] = self.hashKey + "~"+array[i].hash;
-            else entry['hash'] = self.hashKey;
+	    if('hash' in array[i]) entry['hash'] = self.hashKey + "~"+array[i].hash;
+	    else if(options && typeof options == 'object' && 'hash' in options) entry['hash'] = self.hashKey + "~"+options.hash;
+	    else entry['hash'] = self.hashKey;
 	    bulkStream.write(entry);
 	}
 	if(cb) setImmediate(cb);
