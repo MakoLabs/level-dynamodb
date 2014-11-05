@@ -212,15 +212,13 @@ DynamoDown.prototype._batch = function (array, options, cb) {
     if(bulkBufferSize > 0){
 	for(var i=0;i<array.length;i++){
 	    var entry = null;
-	    var hkey = self.hashKey;
 	    if (array[i].type === 'del') {
-		if('hash' in array[i]) hkey = hkey + "~"+array[i].hash;
-		entry = { type: 'del', key: array[i].key, 'hash': hkey };
+		entry = { type: 'del', key: array[i].key };
 	    }else{
-		if('hash' in array[i]) hkey = hkey + "~"+array[i].hash;
-		entry = { type: 'put', key: array[i].key, value: array[i].value, 'hash': hkey };
+		entry = { type: 'put', key: array[i].key, value: array[i].value };
 	    }
-	    if('hash' in array[i]) entry['hash'] = hkey + "~"+array[i].hash;
+            if('hash' in array[i]) entry['hash'] = self.hashKey + "~"+array[i].hash;
+            else entry['hash'] = self.hashKey;
 	    bulkStream.write(entry);
 	}
 	if(cb) setImmediate(cb);
