@@ -4,6 +4,7 @@ var async = require('async');
 var highland = require('highland');
 var Promise = require('bluebird');
 var ALD = require('abstract-leveldown').AbstractLevelDOWN;
+var EventEmitter = require('events').EventEmitter;
 
 var Iterator = require('./iterator');
 
@@ -11,7 +12,12 @@ AWS.config.apiVersions = { dynamodb: '2012-08-10' };
 
 var bulkBuffer = [];
 var bulkBufferSize = 0;
-var flushTimeout = null;
+var bulkStream = null;
+var ended = false;
+var inflight = 0;
+var written = 0;
+var pending = 0;
+var flushed = false;
 
 var DynamoDown = module.exports = function (location) {
     if (!(this instanceof DynamoDown)) {
@@ -22,7 +28,7 @@ var DynamoDown = module.exports = function (location) {
     this.tableName = tableHash[0]
     this.hashKey = tableHash[1] || '!'
     this.maxDelay = 2500;
-    this.flushing = null;
+    this.events = new EventEmitter();
     ALD.call(this, location)
 }
 
@@ -42,11 +48,19 @@ DynamoDown.prototype._open = function(options, cb) {
     this.ddb = new AWS.DynamoDB(dynOpts)
 
     if('maxDelay' in options) try{ this.maxDelay = parseInt(options.maxDelay); }catch(err){}
+    this.ProvisionedThroughput = options.dynamo.ProvisionedThroughput;
     if('bulkBufferSize' in options){
 	bulkBufferSize = options.bulkBufferSize;
+	//var ratelimit = Math.ceil(0.02*this.ProvisionedThroughput.WriteCapacityUnits);
+	//console.log("Using ratelimit of "+ratelimit);
+	//bulkStream = highland().ratelimit(ratelimit, 1000).batch(20);
+	bulkStream = highland().batch(24);
+	bulkStream.on('data', self.process_batch.bind(self));
+	bulkStream.on('end', function(){
+	    ended = true; 
+	    self.events.emit('end');
+	});
     }
-    this.ProvisionedThroughput = options.dynamo.ProvisionedThroughput;
-
     if (options.createIfMissing) {
 	this.createTable({
 	    ProvisionedThroughput: options.dynamo.ProvisionedThroughput
@@ -90,27 +104,8 @@ DynamoDown.prototype._put = function(key, value, options, cb) {
     var self = this;
 
     if(bulkBufferSize > 0){
-	var process = function(){
-	    bulkBuffer.push({ type: 'put', key: key, value:value, params: params, hash: hkey });
-	    if(bulkBuffer.length >= bulkBufferSize){
-		self.flush(cb);
-	    }else{
-		// set the flush timeout if need be
-		if(self.maxDelay > 0 && !flushTimeout){
-		    flushTimeout = setTimeout(function(){
-			flushTimeout = null;
-			self.flush.bind(self)();
-		    }, self.maxDelay);
-		}
-		setImmediate(cb);
-	    }
-	};
-	if(self.flushing != null){
-	    // we wait for the flush to complete
-	    self.flushing.then(process);
-	}else{
-	    process();
-	}
+	bulkStream.write({ type: 'put', key: key, value:value, params: params, hash: hkey });
+	if(cb) setImmediate(cb);
     }else{
     	var params = {
 	    TableName: this.tableName,
@@ -215,39 +210,20 @@ DynamoDown.prototype._batch = function (array, options, cb) {
 
     var self = this;
     if(bulkBufferSize > 0){
-	var process = function(){
-		var hkey = self.hashKey;
-	    for(var i=0;i<array.length;i++){
-	    	var entry = null;
-		if (array[i].type === 'del') {
-		    entry = { type: 'del', key: array[i].key, 'hash': hkey };
-		}else{
-		    entry = { type: 'put', key: array[i].key, value: array[i].value, 'hash': hkey };
-		}
-		if('hash' in array[i]) entry['hash'] = hkey + "~"+array[i].hash;
-		bulkBuffer.push(entry);
-		console.log(util.inspect(entry))
-	    }
-	    
-	    if(bulkBuffer.length >= bulkBufferSize){
-		self.flush(cb);
+	for(var i=0;i<array.length;i++){
+	    var entry = null;
+	    var hkey = self.hashKey;
+	    if (array[i].type === 'del') {
+		if('hash' in array[i]) hkey = hkey + "~"+array[i].hash;
+		entry = { type: 'del', key: array[i].key, 'hash': hkey };
 	    }else{
-		// set the flush timeout if need be
-		if(self.maxDelay > 0 && !flushTimeout){
-		    flushTimeout = setTimeout(function(){
-			flushTimeout = null;
-			self.flush.bind(self)();
-		    }, self.maxDelay);
-		}
-		setImmediate(cb);
+		if('hash' in array[i]) hkey = hkey + "~"+array[i].hash;
+		entry = { type: 'put', key: array[i].key, value: array[i].value, 'hash': hkey };
 	    }
-	};
-	if(self.flushing != null){
-	    // we wait for the flush to complete
-	    self.flushing.then(process);
-	}else{
-	    process();
+	    if('hash' in array[i]) entry['hash'] = hkey + "~"+array[i].hash;
+	    bulkStream.write(entry);
 	}
+	if(cb) setImmediate(cb);
     }else{
 	async.eachSeries(array, function (item, cb) {
 	    var opts = {};
@@ -300,66 +276,92 @@ DynamoDown.prototype.createTable = function(opts, cb) {
     this.ddb.createTable(params, cb)
 }
 
-DynamoDown.prototype.flush = function(cb)
+DynamoDown.prototype.process_batch = function(args)
 {
-    if(flushTimeout){
-	clearTimeout(flushTimeout);
-	flushTimeout = null;
-    }
     var self = this;
-    if(bulkBuffer.length > 0){
-	// need a transaction
-	if(self.flushing){
-    	    if(cb) self.flushing.nodeify(cb);
-    	    return;
-	}
-	self.flushing = new Promise(function(resolve, reject){
-	    var stream = highland(bulkBuffer).ratelimit(Math.ceil(0.95*self.ProvisionedThroughput.WriteCapacityUnits), 1000);
-	    stream.each(function(entry){
-		if(entry.type == 'del'){
-		    var params = {
-			TableName: self.tableName,
-			Key: {
-			    hkey: { S: entry.hash },
-			    rkey: { S: entry.key }
-			}
-		    };
-		    this.ddb.deleteItem(params, function(err){
-			if(err) console.log("[delete error] Error deleting "+util.inspect(entry)+":"+err);
-		    });		    
-		}else{
-		    var params = {
-			TableName: self.tableName,
-			Key: {
-			    hkey: { S: entry.hash },
-			    rkey: { S: entry.key }
-			},
-			AttributeUpdates: {
-			    value: {
-				Action: 'PUT',
-				Value: {
-				    S: entry.value
-				}
-			    }
-			}
-		    };
-		    console.log(util.inspect(params, { depth: 6 }));
-		    self.ddb.updateItem(params, function(err){
-			if(err) console.log("[update error] Error updating "+util.inspect(entry)+":"+err);			
-		    });
+    var request;
+    var items = [];
+    for(var i=0;i<args.length;i++){
+	var entry = args[i];
+	if(entry.type == 'retry'){
+	    items.push(entry.contents);
+	}else if(entry.type == 'del'){
+	    items.push({ 
+		DeleteRequest: {
+		    Key: {
+			hkey: { S: entry.hash },
+			rkey: { S: entry.key }
+		    }
 		}
 	    });
-	    stream.on('end', function(){
-		var flushing = self.flushing;
-		self.flushing = null;
-		bulkBuffer = [];
-		resolve(true);
-		if(cb) setImmediate(cb);
+	}else{
+	    items.push({
+		PutRequest: {
+		    Item: {
+			hkey: { S: entry.hash },
+			rkey: { S: entry.key },
+			value: {
+			    S: entry.value
+			}
+		    }
+		}
 	    });
-	    stream.resume();
-	});
-	if(cb) self.flushing.nodeify(cb);
-    }else{
-	if(cb) setImmediate(cb);
+	}
     }
+    request = { RequestItems: {}, ReturnItemCollectionMetrics: 'SIZE' };
+    request['RequestItems'][self.tableName] = items;
+    self.events.emit('save', request['RequestItems'][self.tableName].length);
+    inflight += 1;
+    self.ddb.batchWriteItem(request, function(err, data){
+	inflight -= 1;
+	/*
+	  UnprocessedItems:
+	  { lbs:
+	  [ [Object],
+          [Object],
+          [Object],
+          [Object],
+          [Object],
+          [Object],
+          [Object],
+	*/
+	if(err) console.log("[batch write error] "+util.inspect(entry)+":"+err);
+	if('UnprocessedItems' in data && self.tableName in data['UnprocessedItems']){
+	    // retry
+	    console.log("Rescheduled "+data['UnprocessedItems'][self.tableName].length+" items.");
+
+	    // schedule the retry for 10 seconds
+	    var retry_items = data['UnprocessedItems'][self.tableName];
+	    pending += retry_items.length;
+	    setTimeout(function(){
+		for(var j=0;j<retry_items.length;j++){
+		    bulkStream.write({ type: 'retry', contents: retry_items[j] });
+		    --pending;
+		}
+	    }, 10000);
+	    
+	    // track writes
+	    written = written + items.length - data['UnprocessedItems'][self.tableName].length;
+
+	    // emit an event
+	    self.events.emit('saved', items.length, data['UnprocessedItems'][self.tableName].length);
+	}else{
+	    // track writes
+	    written += items.length;
+
+	    // emit an event
+	    self.events.emit('saved', items.length);
+
+	    // end if we need to
+	    if(flushed && pending == 0 && inflight == 0) bulkStream.write(highland.nil);
+	}
+	self.events.emit('written', written);
+    });
+};
+
+DynamoDown.prototype.flush = function(cb)
+{
+    flushed = true;
+    this.events.on('end', cb);
+    if(pending == 0 && inflight == 0) bulkStream.write(highland.nil);
 };
