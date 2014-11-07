@@ -76,8 +76,8 @@ DynamoIterator.prototype.createReadStream = function(opts) {
       if (!filtered) stream.write(item)
     })
 
-    opts.ExclusiveStartKey = data.ExclusiveStartKey
-    if (data.ExclusiveStartKey) {
+    if (data.LastEvaluatedKey) {
+      opts.ExclusiveStartKey = data.LastEvaluatedKey
       self.getRange(opts, onData)
     } else {
       stream.end()
