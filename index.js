@@ -337,6 +337,7 @@ DynamoDown.prototype.process_batch = function(args)
 		    bulkStream.write({ type: 'retry', contents: retry_items[j] });
 		    --pending;
 		}
+		if(flushed && pending == 0 && inflight == 0) bulkStream.write(highland.nil);
 	    }, 10000);
 	    
 	    // track writes
